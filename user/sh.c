@@ -115,6 +115,7 @@ runcmd(struct cmd *cmd)
       close(p[1]);
       runcmd(pcmd->right);
     }
+    
     close(p[0]);
     close(p[1]);
     wait(0);
