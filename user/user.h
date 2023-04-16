@@ -1,7 +1,7 @@
 struct stat;
 struct rtcdate;
 
-// system calls
+// system calls，这里调用到哪里去了？
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
@@ -23,6 +23,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int trace(int);
+struct sysinfo;
+int sysinfo(struct sysinfo *);
 
 // ulib.c
 int stat(const char*, struct stat*);

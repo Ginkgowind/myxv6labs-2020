@@ -22,6 +22,7 @@ main(void)
   }
   dup(0);  // stdout
   dup(0);  // stderr
+  // 0 1 2 其实都指向的控制台
 
   for(;;){
     printf("init: starting sh\n");
@@ -31,7 +32,7 @@ main(void)
       exit(1);
     }
     if(pid == 0){
-      exec("sh", argv);
+      exec("sh", argv); // 启动shell
       printf("init: exec sh failed\n");
       exit(1);
     }

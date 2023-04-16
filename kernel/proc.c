@@ -127,6 +127,8 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->mask = 0; // (newly added) 为 syscall_trace 设置一个 0 的默认值
+
   return p;
 }
 
@@ -282,6 +284,9 @@ fork(void)
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
+
+  // 复制trace位mask
+  np->mask = p->mask;
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -692,4 +697,22 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64
+getprocnum(void)
+{
+  struct proc *p;
+  uint64 ret=0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    // acquire(&p->lock);
+    // 不需要锁进程 proc 结构，因为我们只需要读取进程列表，不需要写
+    if(p->state != UNUSED) {
+      ret++;
+    }
+    // release(&p->lock);
+  }
+
+  return ret;
 }

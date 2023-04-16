@@ -1,0 +1,11 @@
+{
+    "editor.tabSize": 2,
+    "files.associations": {
+      "param.h": "c",
+      "types.h": "c",
+      "user.h": "c",
+      "stat.h": "c",
+      "sysinfo.h": "c",
+      "defs.h": "c"
+    }
+}
