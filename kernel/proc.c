@@ -30,16 +30,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +111,19 @@ found:
     return 0;
   }
 
+  p->kernel_pagetable = kvm_newkernelpgtbl();
+
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  // 因为是不同的地址空间，那么映射在同一位置就好
+  uint64 va = KSTACK((int)0);
+  kvmmap(p->kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -142,6 +145,18 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+
+  // 释放进程的内核栈
+  void *kstack_pa = (void *)kvmpa(p->kernel_pagetable, p->kstack);
+  // printf("trace: free kstack %p\n", kstack_pa);
+  kfree(kstack_pa);
+  p->kstack = 0;
+  // TODO:You'll need a way to free a page table
+  // without also freeing the leaf physical memory pages.
+  if(p->kernel_pagetable)
+    kvm_freekernelpgtbl(p->kernel_pagetable);
+  p->kernel_pagetable = 0;
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -220,6 +235,8 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  // for lab
+  kvmcopymapping(p->pagetable, p->kernel_pagetable ,0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -246,8 +263,11 @@ growproc(int n)
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    // 更新映射
+    kvmcopymapping(p->pagetable,p->kernel_pagetable,p->sz,n);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    kvmdealloc(p->kernel_pagetable, p->sz, p->sz + n);
   }
   p->sz = sz;
   return 0;
@@ -274,6 +294,12 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  // 添加内核表的映射
+  if(kvmcopymapping(p->pagetable, np->pagetable, 0, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   np->parent = p;
 
@@ -473,7 +499,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // for lab 切换到进程单独的
+        w_satp(MAKE_SATP(p->kernel_pagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
+
+        // 切换回全局内核页表
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -487,6 +521,8 @@ scheduler(void)
     if(found == 0) {
       intr_on();
       asm volatile("wfi");
+      // for lab
+      // kvminithart();
     }
 #else
     ;
