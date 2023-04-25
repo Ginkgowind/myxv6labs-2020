@@ -295,7 +295,7 @@ fork(void)
   }
   np->sz = p->sz;
   // 添加内核表的映射
-  if(kvmcopymapping(p->pagetable, np->pagetable, 0, p->sz) < 0){
+  if(kvmcopymapping(np->pagetable, np->kernel_pagetable, 0, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;

@@ -112,7 +112,7 @@ exec(char *path, char **argv)
 
   // 清除内核页表中对程序内存的旧映射，然后重新建立映射。
   // TODO: 删除下句
-  // uvmunmap(p->kernel_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  uvmunmap(p->kernel_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
   kvmcopymapping(pagetable, p->kernel_pagetable, 0, sz);
     
   // Commit to the user image.
