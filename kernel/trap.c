@@ -53,6 +53,7 @@ usertrap(void)
   if(r_scause() == 8){
     // system call
 
+    // 检查是不是有其他的进程杀掉了当前进程
     if(p->killed)
       exit(-1);
 
@@ -77,8 +78,27 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+    if (p->ticks != 0 ) {
+      p->tickslc ++;
+      if (p->tickslc >= p->ticks) {
+        if(!p->alarm_goingoff) { // 确保没有时钟正在运行
+          // p->alarm_handler();
+          // 因为地址有可能是0所以不能直接调用（错误判断），但是为什么可能是0？
+          /* 而且最主要的是内核空间不能直接调用用户空间的函数（页表不同）
+            handler地址为零应该是想表达的不能用于作判断条件叭 */
+          *p->alarm_trapframe = *p->trapframe; // backup trapframe，进行一个备份
+          p->tickslc = 0;
+          p->trapframe->epc = (uint64)p->alarm_handler; // 通过epc寄存器来储存返回后执行的指令地址
+          p->alarm_goingoff = 1;
+        }
+        /* 如果一个时钟到期的时候已经有一个时钟处理函数正在运行，
+          则会推迟到原处理函数运行完成后的下一个 tick 才触发这次时钟 */
+      }
+    }
+    
     yield();
+  }
 
   usertrapret();
 }

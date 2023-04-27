@@ -117,6 +117,8 @@ printf(char *fmt, ...)
 void
 panic(char *s)
 {
+  backtrace();
+
   pr.locking = 0;
   printf("panic: ");
   printf(s);
@@ -132,3 +134,35 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void backtrace()
+{
+  uint64 curfp = r_fp();
+  uint64 prefp;
+  uint64 ra;
+  while (curfp < PGROUNDUP(curfp)) {
+    asm (
+      "ld %[x], -8(%[p]) \n\t"    // 使用 RISC-V 汇编语言
+      : [x] "=r" (ra)
+      : [p] "r" (curfp)
+    );
+    printf("%p\n",ra);
+
+    asm (
+      "ld %[x], -16(%[p]) \n\t"    // 使用 RISC-V 汇编语言
+      : [x] "=r" (prefp)
+      : [p] "r" (curfp)
+    );
+    curfp = prefp;
+  }
+}
+
+// // 更简洁的一个方法
+// void backtrace() {
+//   uint64 fp = r_fp();
+//   while(fp != PGROUNDUP(fp)) { // 如果已经到达栈底
+//     uint64 ra = *(uint64*)(fp - 8); // return address
+//     printf("%p\n", ra);
+//     fp = *(uint64*)(fp - 16); // previous fp
+//   }
+// }

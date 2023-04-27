@@ -58,6 +58,9 @@ sys_sleep(void)
   int n;
   uint ticks0;
 
+  // for lab
+  backtrace();
+
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
@@ -94,4 +97,30 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_sigalarm(void)
+{
+  int ticks;
+  uint64 handleptr;
+  if(argint(0, &ticks) < 0 || argaddr(1,&handleptr) < 0)
+    return -1;
+  struct proc *p = myproc();
+  p->ticks = ticks;
+  p->alarm_handler = (void (*)())handleptr;
+  p->tickslc = ticks;
+
+  return ticks;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  // 将 trapframe 恢复到时钟中断之前的状态，恢复原本正在执行的程序流
+  struct proc *p = myproc();
+  *p->trapframe = *p->alarm_trapframe;
+  p->alarm_goingoff = 0;
+  
+  return 0;
 }
