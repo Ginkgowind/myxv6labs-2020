@@ -69,6 +69,8 @@ usertrap(void)
     // ok
   } else {
     uint64 va = r_stval();
+    int cnt = kgetrefcnt(walkaddr(p->pagetable,va));
+    printf("%d",cnt);   // 引用计数为什么会是0？
     int flag = uvmshouldtouch(va);
     if((r_scause() == 15 || r_scause() == 13) && flag){
       uvmcowtouch(va); // 分配物理内存，拷贝，并在页表创建映射

@@ -497,7 +497,9 @@ void uvmcowtouch(uint64 va) {
     p->killed = 1;
   } else {
     memmove(mem,(void*)pa,PGSIZE);
+    printf("%d",kgetrefcnt(pa));
     kfree((void*)pa);  // 旧页引用计数-1
+    printf("%d",kgetrefcnt(pa));
     uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 0);  //先清除原来的,否则在mappagges中会判定为remap
     int flags = (PTE_FLAGS(*pte) & ~PTE_COW) | PTE_W;
     if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){

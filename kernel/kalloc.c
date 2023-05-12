@@ -60,6 +60,10 @@ kfree(void *pa)
     panic("kfree");
 
   acquire(&ref.lock);
+  if (pa==2281037824) {
+    printf("\nlook here\n");
+  }
+  int a=ref.cnt[(uint64)pa/PGSIZE];
   if ((-- ref.cnt[(uint64)pa/PGSIZE]) > 0) {
     release(&ref.lock);
     return ;
