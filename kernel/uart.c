@@ -83,6 +83,7 @@ uartinit(void)
 // because it may block, it can't be called
 // from interrupts; it's only suitable for use
 // by write().
+// 有可能被多个进程同时调用
 void
 uartputc(int c)
 {

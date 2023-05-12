@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -131,7 +133,7 @@ kvmpa(uint64 va)
   uint64 off = va % PGSIZE;
   pte_t *pte;
   uint64 pa;
-  
+
   pte = walk(kernel_pagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
@@ -311,7 +313,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -319,14 +320,24 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    
+    if (*pte & PTE_W) { //仅对可写页如此操作
+      *pte = (*pte & (~PTE_W)) | PTE_COW;
+    }
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
+    kaddrefcnt(pa);   // 增加引用计数
+
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    //   kfree(mem);
+    //   goto err;
+    // }
   }
   return 0;
 
@@ -341,7 +352,7 @@ void
 uvmclear(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
-  
+
   pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("uvmclear");
@@ -357,10 +368,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    if (uvmshouldtouch(dstva))
+      uvmcowtouch(dstva); // 分配物理内存，拷贝，并在页表创建映射
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -439,4 +453,58 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// 判断是不是cow页面
+int uvmshouldtouch(uint64 va) {
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  pte = walk(p->pagetable, va, 0);
+  int a=va < p->sz ;
+  int b=(pte!=0);
+  int c=(*pte & PTE_V);
+  int d=(*pte & PTE_COW);
+  return a && b && c && d;
+
+  // return va < p->sz 
+  //     && ((pte = walk(p->pagetable, va, 0))!=0) 
+  //     && (*pte & PTE_V)
+  //     && (*pte & PTE_COW);
+}
+
+void uvmcowtouch(uint64 va) {
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  if((pte = walk(p->pagetable, va, 0)) == 0)
+    panic("uvmcowcopy: walk");
+
+  uint64 pa = PTE2PA(*pte);
+
+  if(kgetrefcnt(pa) == 1) {
+    // 只剩一个进程对此物理地址存在引用
+    // 则直接修改对应的PTE即可
+    *pte |= PTE_W;
+    *pte &= ~PTE_COW;
+    return ;
+  }
+
+  char *mem = kalloc();
+  if(mem == 0) {
+    // failed to allocate physical memory
+    printf("cow alloc: out of memory\n");
+    p->killed = 1;
+  } else {
+    memmove(mem,(void*)pa,PGSIZE);
+    kfree((void*)pa);  // 旧页引用计数-1
+    uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 0);  //先清除原来的,否则在mappagges中会判定为remap
+    int flags = (PTE_FLAGS(*pte) & ~PTE_COW) | PTE_W;
+    if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
+      printf("cow alloc: failed to map page\n");
+      kfree(mem);
+      p->killed = 1;
+    }
+  }
+  // printf("cow alloc: %p, p->sz: %p\n", PGROUNDDOWN(va), p->sz);
 }
