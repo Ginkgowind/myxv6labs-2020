@@ -117,7 +117,7 @@ sys_fstat(void)
 
 // Create the path new as a link to the same inode as old.
 uint64
-sys_link(void)
+sys_link(void)  // 设置了 struct dirent 指向指向相同的inum
 {
   char name[DIRSIZ], new[MAXPATH], old[MAXPATH];
   struct inode *dp, *ip;
@@ -252,7 +252,7 @@ create(char *path, short type, short major, short minor)
   if((ip = dirlookup(dp, name, 0)) != 0){
     iunlockput(dp);
     ilock(ip);
-    if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
+    if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))  // open
       return ip;
     iunlockput(ip);
     return 0;
@@ -322,6 +322,34 @@ sys_open(void)
     return -1;
   }
 
+  if (ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0) {
+    // 判断递归跟随符号链接
+    char target[MAXPATH];
+    int depth = 0;
+    while (1) {
+      if ((++depth) > 10) {   // 原来将这个与下面这个合成了一个，但其实这样会导致readi没有进行
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      if (readi(ip, 0, (uint64)target, 0, MAXPATH) < 0) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip); // 注意解锁上一个，因为在不断递归解析ip
+
+      ip = namei(target);
+      if(ip == 0) {
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      if (ip->type != T_SYMLINK)
+        break;
+    }
+  }
+
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -349,6 +377,34 @@ sys_open(void)
   end_op();
 
   return fd;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], linkpath[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, linkpath, MAXPATH) < 0)
+    return -1;
+  
+  begin_op();
+
+  ip = create(linkpath,T_SYMLINK,0,0);  // 新建
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+  // ilock(ip);
+  if(writei(ip, 0, (uint64)target, 0, MAXPATH) < 0) {
+    end_op();
+    return -1;
+  }
+  iunlock(ip);
+
+  end_op();
+
+  return 0;
 }
 
 uint64
@@ -484,3 +540,4 @@ sys_pipe(void)
   }
   return 0;
 }
+

@@ -694,14 +694,14 @@ namex(char *path, int nameiparent, char *name)
     if(nameiparent && *path == '\0'){
       // Stop one level early.
       iunlock(ip);
-      return ip;
+      return ip;  // 返回父目录的inode，并且最后一个元素已经被复制到了name
     }
     if((next = dirlookup(ip, name, 0)) == 0){
       iunlockput(ip);
       return 0;
     }
     iunlockput(ip);
-    ip = next;
+    ip = next;      // 循环获取路径中下一级目录的inode
   }
   if(nameiparent){
     iput(ip);
